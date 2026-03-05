@@ -1,0 +1,14 @@
+{
+  "name": "gpu-bridge-dev",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "mounts": [
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+  ],
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y docker.io curl ca-certificates && sudo curl -L https://github.com/docker/compose/releases/download/v2.27.1/docker-compose-linux-aarch64 -o /usr/local/bin/docker-compose && sudo chmod +x /usr/local/bin/docker-compose && echo 'vscode ALL=(ALL) NOPASSWD: /usr/bin/docker, /usr/local/bin/docker-compose' | sudo tee /etc/sudoers.d/99-docker-nopasswd >/dev/null && sudo chmod 0440 /etc/sudoers.d/99-docker-nopasswd && pip install -U pip && pip install -r requirements-dev.txt -r controller/requirements.txt && pip install -e ./cli -e ./worker",
+  "postStartCommand": "sudo chmod 666 /var/run/docker.sock || true",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "charliermarsh.ruff"]
+    }
+  }
+}

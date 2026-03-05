@@ -1,0 +1,12 @@
+[project]
+name = "gpu-worker"
+version = "0.1.0"
+description = "GPUBridge Worker CLI"
+requires-python = ">=3.11"
+dependencies = ["typer>=0.12.5", "httpx>=0.27.2"]
+
+[project.scripts]
+gpu-worker = "gpu_worker.main:app"
+
+[tool.ruff]
+line-length = 100
