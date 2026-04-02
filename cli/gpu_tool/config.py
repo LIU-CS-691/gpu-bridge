@@ -11,8 +11,7 @@ if env_path.exists():
 
 
 class Settings(BaseModel):
-    GPU_TOOL_SERVER: str = os.getenv(
-        "GPU_TOOL_SERVER", "http://localhost:8000")
+    GPU_TOOL_SERVER: str = os.getenv("GPU_TOOL_SERVER", "http://localhost:8000")
     GPU_TOOL_TOKEN: str = os.getenv("GPU_TOOL_TOKEN", "devtoken")
 
 

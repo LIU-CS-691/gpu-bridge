@@ -42,8 +42,7 @@ def job_create(
 ):
     """Create a dummy job assigned to a worker."""
     with client() as c:
-        r = c.post("/jobs", json={"worker_id": gpu_id,
-                   "image": image, "command": cmd})
+        r = c.post("/jobs", json={"worker_id": gpu_id, "image": image, "command": cmd})
         r.raise_for_status()
         typer.echo(r.json())
 

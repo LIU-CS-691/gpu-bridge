@@ -13,8 +13,7 @@ def require_env(name: str) -> str:
     val = os.getenv(name)
     if not val:
         raise RuntimeError(
-            f"Missing required env var: {name}. "
-            f"Create a .env file or export the variable."
+            f"Missing required env var: {name}. " f"Create a .env file or export the variable."
         )
     return val
 
