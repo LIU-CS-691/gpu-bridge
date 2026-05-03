@@ -10,8 +10,10 @@ VALID_TRANSITIONS = {
 }
 
 
-def create_worker(db: Session, name: str) -> models.Worker:
-    w = models.Worker(name=name)
+def create_worker(
+    db: Session, name: str, gpu_info: list[dict] | None = None
+) -> models.Worker:
+    w = models.Worker(name=name, gpu_info=gpu_info)
     db.add(w)
     db.commit()
     db.refresh(w)
@@ -26,11 +28,15 @@ def list_workers(db: Session) -> list[models.Worker]:
     return db.query(models.Worker).order_by(models.Worker.created_at.desc()).all()
 
 
-def heartbeat(db: Session, worker_id: str) -> models.Worker | None:
+def heartbeat(
+    db: Session, worker_id: str, gpu_info: list[dict] | None = None
+) -> models.Worker | None:
     w = db.get(models.Worker, worker_id)
     if not w:
         return None
     w.last_heartbeat = datetime.now(timezone.utc)
+    if gpu_info is not None:
+        w.gpu_info = gpu_info
     db.commit()
     db.refresh(w)
     return w

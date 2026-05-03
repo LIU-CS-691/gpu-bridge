@@ -41,6 +41,7 @@ def _worker_out(w) -> schemas.WorkerOut:
         name=w.name,
         last_heartbeat=w.last_heartbeat.isoformat() if w.last_heartbeat else None,
         status=_worker_status(w),
+        gpu_info=w.gpu_info,
     )
 
 
@@ -72,7 +73,10 @@ def create_app() -> FastAPI:
         response_model=schemas.WorkerOut,
     )
     def register_worker(payload: schemas.WorkerCreate, db: Session = Depends(get_db)):
-        w = crud.create_worker(db, payload.name)
+        gpu_data = (
+            [g.model_dump() for g in payload.gpu_info] if payload.gpu_info else None
+        )
+        w = crud.create_worker(db, payload.name, gpu_info=gpu_data)
         return _worker_out(w)
 
     @app.get(
@@ -88,8 +92,15 @@ def create_app() -> FastAPI:
         dependencies=[Depends(require_token)],
         response_model=schemas.WorkerOut,
     )
-    def worker_heartbeat(worker_id: str, db: Session = Depends(get_db)):
-        w = crud.heartbeat(db, worker_id)
+    def worker_heartbeat(
+        worker_id: str,
+        payload: schemas.WorkerHeartbeat | None = None,
+        db: Session = Depends(get_db),
+    ):
+        gpu_data = None
+        if payload and payload.gpu_info:
+            gpu_data = [g.model_dump() for g in payload.gpu_info]
+        w = crud.heartbeat(db, worker_id, gpu_info=gpu_data)
         if not w:
             raise HTTPException(status_code=404, detail="Worker not found")
         return _worker_out(w)

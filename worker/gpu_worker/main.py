@@ -5,6 +5,7 @@ import typer
 
 from .config import load_config
 from .executor import run_container_streaming
+from .gpu_detect import detect_gpus
 
 app = typer.Typer(help="GPUBridge Worker CLI")
 
@@ -16,10 +17,21 @@ HEARTBEAT_INTERVAL = 30
 def register(name: str = typer.Option("Unnamed GPU")):
     """Register this machine as a worker."""
     cfg = load_config()
+    gpu_info = detect_gpus()
+
+    payload = {"name": name}
+    if gpu_info:
+        payload["gpu_info"] = gpu_info
+        typer.echo(f"Detected {len(gpu_info)} GPU(s):")
+        for g in gpu_info:
+            typer.echo(f"  [{g['index']}] {g['name']} — {g['memory_total_mb']} MB")
+    else:
+        typer.echo("No NVIDIA GPUs detected")
+
     with httpx.Client(
         base_url=cfg["server"], headers={"X-API-Token": cfg["token"]}, timeout=30.0
     ) as c:
-        r = c.post("/workers/register", json={"name": name})
+        r = c.post("/workers/register", json=payload)
         r.raise_for_status()
         worker = r.json()
         typer.echo(f"Registered worker_id={worker['id']}")
@@ -75,7 +87,11 @@ def start(
 
             if now - last_heartbeat >= HEARTBEAT_INTERVAL:
                 try:
-                    c.post(f"/workers/{worker_id}/heartbeat")
+                    gpu_info = detect_gpus()
+                    hb_payload = {}
+                    if gpu_info:
+                        hb_payload["gpu_info"] = gpu_info
+                    c.post(f"/workers/{worker_id}/heartbeat", json=hb_payload)
                     last_heartbeat = now
                 except httpx.HTTPError:
                     typer.echo("Heartbeat failed, retrying next cycle")
