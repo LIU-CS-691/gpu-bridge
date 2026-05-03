@@ -1,3 +1,4 @@
+import base64
 import os
 from pathlib import Path
 
@@ -11,14 +12,16 @@ if env_path.exists():
 os.environ["DATABASE_URL"] = os.getenv(
     "TEST_DATABASE_URL", "postgresql+psycopg://gpu:gpu@localhost:5433/gpu_bridge_test"
 )
-os.environ["API_TOKEN"] = "test-token"
+os.environ["BOOTSTRAP_TOKEN"] = "test-token"
+os.environ["SERVER_URL"] = "http://localhost:8000"
 
 from controller.app.db import Base, engine  # noqa: E402
 from controller.app.main import create_app  # noqa: E402
 import controller.app.models  # noqa: E402, F401
 from fastapi.testclient import TestClient  # noqa: E402
 
-HEADERS = {"X-API-Token": "test-token"}
+ADMIN_HEADERS = {"X-API-Token": "test-token"}
+HEADERS = ADMIN_HEADERS
 
 
 @pytest.fixture(autouse=True)
@@ -299,3 +302,129 @@ def test_priority_ordering():
     jobs = r.json()
     assert len(jobs) >= 2
     assert jobs[0]["priority"] >= jobs[1]["priority"]
+
+
+# --- Auth & API Key tests ---
+
+
+def test_no_token_returns_401():
+    client = get_test_client()
+    r = client.get("/workers")
+    assert r.status_code == 401
+
+
+def test_invalid_token_returns_401():
+    client = get_test_client()
+    r = client.get("/workers", headers={"X-API-Token": "bogus"})
+    assert r.status_code == 401
+
+
+def test_create_and_use_api_key():
+    client = get_test_client()
+
+    r = client.post(
+        "/api-keys",
+        json={"name": "test-user-key", "role": "user"},
+        headers=ADMIN_HEADERS,
+    )
+    assert r.status_code == 200
+    key = r.json()["key"]
+    assert key.startswith("gpub_")
+
+    user_headers = {"X-API-Token": key}
+    r = client.get("/workers", headers=user_headers)
+    assert r.status_code == 200
+
+
+def test_user_key_cannot_manage_keys():
+    client = get_test_client()
+
+    r = client.post(
+        "/api-keys",
+        json={"name": "user-key", "role": "user"},
+        headers=ADMIN_HEADERS,
+    )
+    user_key = r.json()["key"]
+
+    r = client.get("/api-keys", headers={"X-API-Token": user_key})
+    assert r.status_code == 403
+
+
+def test_worker_key_cannot_create_jobs():
+    client = get_test_client()
+
+    r = client.post(
+        "/api-keys",
+        json={"name": "worker-key", "role": "worker"},
+        headers=ADMIN_HEADERS,
+    )
+    worker_key = r.json()["key"]
+
+    r = client.post(
+        "/jobs",
+        json={"image": "alpine", "command": "echo hi"},
+        headers={"X-API-Token": worker_key},
+    )
+    assert r.status_code == 403
+
+
+def test_revoke_api_key():
+    client = get_test_client()
+
+    r = client.post(
+        "/api-keys",
+        json={"name": "revoke-me", "role": "user"},
+        headers=ADMIN_HEADERS,
+    )
+    key_id = r.json()["id"]
+    key = r.json()["key"]
+
+    r = client.delete(f"/api-keys/{key_id}", headers=ADMIN_HEADERS)
+    assert r.status_code == 200
+    assert r.json()["is_active"] is False
+
+    r = client.get("/workers", headers={"X-API-Token": key})
+    assert r.status_code == 401
+
+
+def test_list_api_keys():
+    client = get_test_client()
+
+    client.post(
+        "/api-keys",
+        json={"name": "key-a", "role": "user"},
+        headers=ADMIN_HEADERS,
+    )
+    client.post(
+        "/api-keys",
+        json={"name": "key-b", "role": "worker"},
+        headers=ADMIN_HEADERS,
+    )
+
+    r = client.get("/api-keys", headers=ADMIN_HEADERS)
+    assert r.status_code == 200
+    keys = r.json()
+    assert len(keys) >= 2
+    assert not any("key" in k for k in keys[0])
+
+
+def test_invite_token():
+    client = get_test_client()
+
+    r = client.post(
+        "/api-keys",
+        json={"name": "invite-test", "role": "user"},
+        headers=ADMIN_HEADERS,
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert "invite_token" in data
+
+    decoded = base64.urlsafe_b64decode(data["invite_token"]).decode()
+    server, key = decoded.split("|", 1)
+    assert server == "http://localhost:8000"
+    assert key == data["key"]
+
+    user_headers = {"X-API-Token": key}
+    r = client.get("/workers", headers=user_headers)
+    assert r.status_code == 200

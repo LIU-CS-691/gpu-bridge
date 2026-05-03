@@ -32,7 +32,7 @@ services:
       context: ./controller
     environment:
       DATABASE_URL: postgresql+psycopg://gpu:gpu@db:5432/gpu_bridge
-      API_TOKEN: ${API_TOKEN}
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN}
     env_file:
       - .env
     ports:

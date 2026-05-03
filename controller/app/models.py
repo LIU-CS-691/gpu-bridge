@@ -1,7 +1,8 @@
+import secrets
 import uuid
 from typing import Optional
 
-from sqlalchemy import JSON, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy import JSON, Integer, Boolean, String, Text, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -10,6 +11,10 @@ from .db import Base
 
 def _uuid() -> str:
     return uuid.uuid4().hex
+
+
+def _api_key() -> str:
+    return "gpub_" + secrets.token_urlsafe(32)
 
 
 class Worker(Base):
@@ -25,6 +30,20 @@ class Worker(Base):
     gpu_info: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     jobs: Mapped[list["Job"]] = relationship(back_populates="worker")
+
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    key: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True, default=_api_key
+    )
+    name: Mapped[str] = mapped_column(String(200))
+    role: Mapped[str] = mapped_column(String(32))  # admin, user, worker
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class Job(Base):

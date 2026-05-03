@@ -183,3 +183,32 @@ def append_logs(db: Session, job_id: str, data: str) -> models.Job | None:
     db.commit()
     db.refresh(j)
     return j
+
+
+# --- API Keys ---
+
+
+def create_api_key(db: Session, name: str, role: str) -> models.ApiKey:
+    k = models.ApiKey(name=name, role=role)
+    db.add(k)
+    db.commit()
+    db.refresh(k)
+    return k
+
+
+def get_api_key_by_key(db: Session, key: str) -> models.ApiKey | None:
+    return db.query(models.ApiKey).filter(models.ApiKey.key == key).first()
+
+
+def list_api_keys(db: Session) -> list[models.ApiKey]:
+    return db.query(models.ApiKey).order_by(models.ApiKey.created_at.desc()).all()
+
+
+def revoke_api_key(db: Session, key_id: str) -> models.ApiKey | None:
+    k = db.get(models.ApiKey, key_id)
+    if not k:
+        return None
+    k.is_active = False
+    db.commit()
+    db.refresh(k)
+    return k

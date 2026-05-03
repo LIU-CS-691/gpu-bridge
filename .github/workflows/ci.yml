@@ -8,7 +8,7 @@ on:
 
 env:
   PYTHON_VERSION: "3.11"
-  API_TOKEN: devtoken
+  BOOTSTRAP_TOKEN: bootstrap-secret
 
 jobs:
   lint:
@@ -92,7 +92,7 @@ jobs:
 
       - name: Start services
         run: |
-          echo "API_TOKEN=devtoken" > .env
+          echo "BOOTSTRAP_TOKEN=bootstrap-secret" > .env
           docker compose up -d --build
           for i in $(seq 1 30); do
             if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
@@ -106,7 +106,7 @@ jobs:
       - name: Run integration tests
         env:
           GPU_BRIDGE_SERVER: http://localhost:8000
-          GPU_BRIDGE_TOKEN: devtoken
+          GPU_BRIDGE_TOKEN: bootstrap-secret
         run: PYTHONPATH=. pytest -q --tb=short tests/integration
 
       - name: Show logs on failure

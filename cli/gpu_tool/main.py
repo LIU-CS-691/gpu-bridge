@@ -1,23 +1,33 @@
+import base64
 import time
 
 import typer
 
 from .api import client
-from .config import save_config, settings
+from .config import save_config
 
 app = typer.Typer(help="GPUBridge CLI")
 
 FOLLOW_POLL_INTERVAL = 1
 
 
+def _decode_invite(token: str) -> tuple[str, str]:
+    try:
+        decoded = base64.urlsafe_b64decode(token).decode()
+        server, key = decoded.split("|", 1)
+        return server, key
+    except Exception:
+        raise typer.BadParameter("Invalid invite token. Get one from your admin.")
+
+
 @app.command()
 def login(
-    server: str = typer.Option(settings.GPU_TOOL_SERVER, "--server"),
-    token: str = typer.Option(..., "--token", prompt=True, hide_input=True),
+    invite_token: str = typer.Argument(..., help="Invite token from your admin"),
 ):
-    """Save controller server + token to ~/.gpu-tool.json."""
+    """Login with an invite token."""
+    server, token = _decode_invite(invite_token)
     save_config(server, token)
-    typer.echo(f"Credentials saved for {server}")
+    typer.echo(f"Logged in to {server}")
 
 
 @app.command()
