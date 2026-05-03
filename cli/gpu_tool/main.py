@@ -66,20 +66,32 @@ def jobs_list(
             typer.echo("No jobs found.")
             return
         for j in jobs:
-            typer.echo(f'[{j["status"]}] {j["id"]} — worker:{j["worker_id"]} image:{j["image"]}')
+            worker = j["worker_id"] or "unassigned"
+            prio = f' P{j["priority"]}' if j.get("priority") else ""
+            typer.echo(f'[{j["status"]}{prio}] {j["id"]} — worker:{worker} image:{j["image"]}')
 
 
 @app.command("job-create")
 def job_create(
-    gpu_id: str = typer.Option(..., "--gpu-id"),
+    gpu_id: str = typer.Option(None, "--gpu-id", help="Worker ID. Omit for auto-assignment."),
     image: str = typer.Option("hello-image"),
     cmd: str = typer.Option("echo hello", "--cmd"),
+    priority: int = typer.Option(0, "--priority", "-p", help="Priority 0-10, higher runs first"),
 ):
-    """Create a job assigned to a worker."""
+    """Create a job. Omit --gpu-id to let the controller auto-assign."""
     with client() as c:
-        r = c.post("/jobs", json={"worker_id": gpu_id, "image": image, "command": cmd})
+        payload = {"image": image, "command": cmd, "priority": priority}
+        if gpu_id:
+            payload["worker_id"] = gpu_id
+        r = c.post("/jobs", json=payload)
         r.raise_for_status()
-        typer.echo(r.json())
+        j = r.json()
+        status_msg = f'{j["status"]}'
+        if j.get("worker_id"):
+            status_msg += f' → worker:{j["worker_id"]}'
+        else:
+            status_msg += " (queued, waiting for worker)"
+        typer.echo(f'Job {j["id"]} [{status_msg}]')
 
 
 @app.command("job-get")

@@ -1,10 +1,13 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from sqlalchemy.orm import Session
 
 from . import models
 
+HEARTBEAT_STALE_SECONDS = 60
+
 VALID_TRANSITIONS = {
+    "QUEUED": {"PENDING"},
     "PENDING": {"RUNNING"},
     "RUNNING": {"SUCCEEDED", "FAILED"},
 }
@@ -28,6 +31,18 @@ def list_workers(db: Session) -> list[models.Worker]:
     return db.query(models.Worker).order_by(models.Worker.created_at.desc()).all()
 
 
+def _is_worker_online(w: models.Worker) -> bool:
+    if not w.last_heartbeat:
+        return False
+    age = datetime.now(timezone.utc) - w.last_heartbeat.replace(tzinfo=timezone.utc)
+    return age < timedelta(seconds=HEARTBEAT_STALE_SECONDS)
+
+
+def get_online_workers(db: Session) -> list[models.Worker]:
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=HEARTBEAT_STALE_SECONDS)
+    return db.query(models.Worker).filter(models.Worker.last_heartbeat >= cutoff).all()
+
+
 def heartbeat(
     db: Session, worker_id: str, gpu_info: list[dict] | None = None
 ) -> models.Worker | None:
@@ -42,8 +57,75 @@ def heartbeat(
     return w
 
 
-def create_job(db: Session, worker_id: str, image: str, command: str) -> models.Job:
-    j = models.Job(worker_id=worker_id, image=image, command=command, status="PENDING")
+def _pick_worker(db: Session) -> models.Worker | None:
+    """Pick the best online worker: fewest PENDING+RUNNING jobs, prefer workers with GPUs."""
+    online = get_online_workers(db)
+    if not online:
+        return None
+
+    def _score(w: models.Worker) -> tuple[int, int]:
+        active = (
+            db.query(models.Job)
+            .filter(
+                models.Job.worker_id == w.id,
+                models.Job.status.in_(["PENDING", "RUNNING"]),
+            )
+            .count()
+        )
+        has_gpu = 1 if w.gpu_info else 0
+        return (-has_gpu, active)
+
+    return min(online, key=_score)
+
+
+def assign_queued_jobs(db: Session) -> list[models.Job]:
+    """Assign QUEUED jobs to available workers, highest priority first."""
+    queued = (
+        db.query(models.Job)
+        .filter(models.Job.status == "QUEUED")
+        .order_by(models.Job.priority.desc(), models.Job.created_at.asc())
+        .all()
+    )
+
+    assigned = []
+    for job in queued:
+        worker = _pick_worker(db)
+        if not worker:
+            break
+        job.worker_id = worker.id
+        job.status = "PENDING"
+        assigned.append(job)
+
+    if assigned:
+        db.commit()
+        for j in assigned:
+            db.refresh(j)
+
+    return assigned
+
+
+def create_job(
+    db: Session,
+    image: str,
+    command: str,
+    priority: int = 0,
+    worker_id: str | None = None,
+) -> models.Job:
+    if worker_id:
+        j = models.Job(
+            worker_id=worker_id,
+            image=image,
+            command=command,
+            priority=priority,
+            status="PENDING",
+        )
+    else:
+        j = models.Job(
+            image=image,
+            command=command,
+            priority=priority,
+            status="QUEUED",
+        )
     db.add(j)
     db.commit()
     db.refresh(j)
@@ -64,7 +146,7 @@ def list_jobs(
         q = q.filter(models.Job.worker_id == worker_id)
     if status:
         q = q.filter(models.Job.status == status)
-    return q.order_by(models.Job.created_at.desc()).all()
+    return q.order_by(models.Job.priority.desc(), models.Job.created_at.desc()).all()
 
 
 def claim_job(db: Session, job_id: str) -> models.Job | None:

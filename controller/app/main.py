@@ -52,6 +52,7 @@ def _job_out(j) -> schemas.JobOut:
         image=j.image,
         command=j.command,
         status=j.status,
+        priority=j.priority,
         logs=j.logs,
     )
 
@@ -103,6 +104,7 @@ def create_app() -> FastAPI:
         w = crud.heartbeat(db, worker_id, gpu_info=gpu_data)
         if not w:
             raise HTTPException(status_code=404, detail="Worker not found")
+        crud.assign_queued_jobs(db)
         return _worker_out(w)
 
     # --- Jobs ---
@@ -111,9 +113,21 @@ def create_app() -> FastAPI:
         "/jobs", dependencies=[Depends(require_token)], response_model=schemas.JobOut
     )
     def create_job(payload: schemas.JobCreate, db: Session = Depends(get_db)):
-        if not crud.get_worker(db, payload.worker_id):
+        if payload.worker_id and not crud.get_worker(db, payload.worker_id):
             raise HTTPException(status_code=404, detail="Worker not found")
-        j = crud.create_job(db, payload.worker_id, payload.image, payload.command)
+        j = crud.create_job(
+            db,
+            image=payload.image,
+            command=payload.command,
+            priority=payload.priority,
+            worker_id=payload.worker_id,
+        )
+        if j.status == "QUEUED":
+            assigned = crud.assign_queued_jobs(db)
+            for a in assigned:
+                if a.id == j.id:
+                    j = a
+                    break
         return _job_out(j)
 
     @app.get(
