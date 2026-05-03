@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: setup up down logs lint test itest fmt
+.PHONY: setup up down logs lint test itest fmt migrate
 
 setup:
 	python -m venv .venv || true
@@ -23,6 +23,9 @@ fmt:
 
 lint:
 	. .venv/bin/activate && ruff check .
+
+migrate:
+	. .venv/bin/activate && cd controller && DATABASE_URL=$${DATABASE_URL:-postgresql+psycopg://gpu:gpu@localhost:5432/gpu_bridge} alembic upgrade head
 
 test:
 	. .venv/bin/activate && PYTHONPATH=. pytest -q

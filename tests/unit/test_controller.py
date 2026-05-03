@@ -1,6 +1,15 @@
 import os
+from pathlib import Path
 
-os.environ["DATABASE_URL"] = "sqlite+pysqlite:///./test.db"
+from dotenv import load_dotenv
+
+env_path = Path(__file__).resolve().parents[2] / ".env"
+if env_path.exists():
+    load_dotenv(env_path, override=False)
+
+os.environ["DATABASE_URL"] = os.getenv(
+    "TEST_DATABASE_URL", "postgresql+psycopg://gpu:gpu@localhost:5433/gpu_bridge_test"
+)
 os.environ["API_TOKEN"] = "test-token"
 
 from controller.app.db import Base, engine  # noqa: E402
@@ -69,7 +78,6 @@ def test_job_claim_and_complete():
     assert r.status_code == 200
     assert r.json()["status"] == "RUNNING"
 
-    # Double claim should fail
     r = client.patch(f"/jobs/{job_id}/claim", headers=HEADERS)
     assert r.status_code == 409
 
@@ -82,7 +90,6 @@ def test_job_claim_and_complete():
     assert r.json()["status"] == "SUCCEEDED"
     assert r.json()["logs"] == "hello world"
 
-    # Complete again should fail
     r = client.patch(
         f"/jobs/{job_id}/complete",
         json={"status": "FAILED"},
@@ -133,7 +140,6 @@ def test_worker_heartbeat():
     assert r.json()["status"] == "online"
     assert r.json()["last_heartbeat"] is not None
 
-    # Heartbeat for non-existent worker
     r = client.post("/workers/nonexistent/heartbeat", headers=HEADERS)
     assert r.status_code == 404
 
@@ -151,7 +157,6 @@ def test_invalid_status_transition():
     )
     job_id = r.json()["id"]
 
-    # Can't complete a PENDING job (must claim first)
     r = client.patch(
         f"/jobs/{job_id}/complete",
         json={"status": "SUCCEEDED"},

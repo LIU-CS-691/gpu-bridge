@@ -1,19 +1,30 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from . import crud, schemas
 from .auth import require_token
-from .db import Base, engine, get_db
+from .db import get_db
 
 HEARTBEAT_STALE_SECONDS = 60
 
 
+def _run_migrations():
+    alembic_cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    alembic_cfg.set_main_option(
+        "script_location", str(Path(__file__).resolve().parents[1] / "alembic")
+    )
+    command.upgrade(alembic_cfg, "head")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    _run_migrations()
     yield
 
 
