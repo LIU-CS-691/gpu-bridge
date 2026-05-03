@@ -1,18 +1,19 @@
 import typer
 
 from .api import client
-from .config import settings
+from .config import save_config, settings
 
 app = typer.Typer(help="GPUBridge CLI")
 
 
 @app.command()
-def login(token: str = typer.Option(...)):
-    """Save controller server + token."""
-    if token == settings.GPU_TOOL_TOKEN:
-        typer.echo("Login successfull..")
-    else:
-        typer.echo("Invalid token. Please use a valid token")
+def login(
+    server: str = typer.Option(settings.GPU_TOOL_SERVER, "--server"),
+    token: str = typer.Option(..., "--token", prompt=True, hide_input=True),
+):
+    """Save controller server + token to ~/.gpu-tool.json."""
+    save_config(server, token)
+    typer.echo(f"Credentials saved for {server}")
 
 
 @app.command()
@@ -26,12 +27,35 @@ def health():
 
 @app.command("workers")
 def workers_list():
-    """List registered workers."""
+    """List registered workers with online/offline status."""
     with client() as c:
         r = c.get("/workers")
         r.raise_for_status()
         for w in r.json():
-            typer.echo(f'{w["name"]} - ID: {w["id"]}')
+            status = w.get("status", "unknown")
+            typer.echo(f'[{status.upper()}] {w["name"]} - ID: {w["id"]}')
+
+
+@app.command("jobs")
+def jobs_list(
+    gpu_id: str = typer.Option(None, "--gpu-id"),
+    status: str = typer.Option(None, "--status"),
+):
+    """List jobs with optional filters."""
+    with client() as c:
+        params = {}
+        if gpu_id:
+            params["worker_id"] = gpu_id
+        if status:
+            params["status"] = status
+        r = c.get("/jobs", params=params)
+        r.raise_for_status()
+        jobs = r.json()
+        if not jobs:
+            typer.echo("No jobs found.")
+            return
+        for j in jobs:
+            typer.echo(f'[{j["status"]}] {j["id"]} — worker:{j["worker_id"]} image:{j["image"]}')
 
 
 @app.command("job-create")
@@ -40,7 +64,7 @@ def job_create(
     image: str = typer.Option("hello-image"),
     cmd: str = typer.Option("echo hello", "--cmd"),
 ):
-    """Create a dummy job assigned to a worker."""
+    """Create a job assigned to a worker."""
     with client() as c:
         r = c.post("/jobs", json={"worker_id": gpu_id, "image": image, "command": cmd})
         r.raise_for_status()
@@ -54,3 +78,17 @@ def job_get(job_id: str = typer.Option(..., "--job-id")):
         r = c.get(f"/jobs/{job_id}")
         r.raise_for_status()
         typer.echo(r.json())
+
+
+@app.command("job-logs")
+def job_logs(job_id: str = typer.Option(..., "--job-id")):
+    """Fetch job output logs."""
+    with client() as c:
+        r = c.get(f"/jobs/{job_id}")
+        r.raise_for_status()
+        j = r.json()
+        logs = j.get("logs")
+        if logs:
+            typer.echo(logs)
+        else:
+            typer.echo(f'No logs available (status: {j["status"]})')

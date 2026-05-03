@@ -1,7 +1,10 @@
 import uuid
-from sqlalchemy import String, DateTime, ForeignKey
+from typing import Optional
+
+from sqlalchemy import String, Text, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
+
 from .db import Base
 
 
@@ -16,6 +19,9 @@ class Worker(Base):
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    last_heartbeat: Mapped[Optional[DateTime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     jobs: Mapped[list["Job"]] = relationship(back_populates="worker")
 
@@ -28,9 +34,8 @@ class Job(Base):
     )
     image: Mapped[str] = mapped_column(String(400), default="hello-image")
     command: Mapped[str] = mapped_column(String(1000), default="echo hello")
-    status: Mapped[str] = mapped_column(
-        String(32), default="PENDING"
-    )  # PENDING/RUNNING/SUCCEEDED/FAILED
+    status: Mapped[str] = mapped_column(String(32), default="PENDING")
+    logs: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

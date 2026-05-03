@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -12,6 +14,8 @@ class WorkerCreate(BaseModel):
 class WorkerOut(BaseModel):
     id: str
     name: str
+    last_heartbeat: Optional[str] = None
+    status: str = "unknown"
 
 
 class JobCreate(BaseModel):
@@ -26,3 +30,9 @@ class JobOut(BaseModel):
     image: str
     command: str
     status: str
+    logs: Optional[str] = None
+
+
+class JobComplete(BaseModel):
+    status: str = Field(..., pattern="^(SUCCEEDED|FAILED)$")
+    logs: Optional[str] = None
