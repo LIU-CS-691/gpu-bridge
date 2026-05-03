@@ -62,3 +62,24 @@ class JobLogsOut(BaseModel):
     job_id: str
     status: str
     logs: str
+
+
+class ApiKeyCreate(BaseModel):
+    name: str = Field(..., max_length=200)
+    role: str = Field(..., pattern="^(admin|user|worker)$")
+
+
+class ApiKeyOut(BaseModel):
+    id: str
+    key: str
+    name: str
+    role: str
+    is_active: bool
+    invite_token: str
+
+
+class ApiKeyListOut(BaseModel):
+    id: str
+    name: str
+    role: str
+    is_active: bool

@@ -1,3 +1,4 @@
+import base64
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -8,7 +9,8 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from . import crud, schemas
-from .auth import require_token
+from .auth import require_role
+from .config import settings
 from .db import get_db
 
 HEARTBEAT_STALE_SECONDS = 60
@@ -66,11 +68,58 @@ def create_app() -> FastAPI:
     def health():
         return schemas.HealthResponse(status="ok")
 
-    # --- Workers ---
+    # --- API Keys (admin only) ---
+
+    @app.post(
+        "/api-keys",
+        dependencies=[Depends(require_role("admin"))],
+        response_model=schemas.ApiKeyOut,
+    )
+    def create_api_key(payload: schemas.ApiKeyCreate, db: Session = Depends(get_db)):
+        k = crud.create_api_key(db, payload.name, payload.role)
+        invite_token = base64.urlsafe_b64encode(
+            f"{settings.server_url}|{k.key}".encode()
+        ).decode()
+        return schemas.ApiKeyOut(
+            id=k.id,
+            key=k.key,
+            name=k.name,
+            role=k.role,
+            is_active=k.is_active,
+            invite_token=invite_token,
+        )
+
+    @app.get(
+        "/api-keys",
+        dependencies=[Depends(require_role("admin"))],
+        response_model=list[schemas.ApiKeyListOut],
+    )
+    def list_api_keys(db: Session = Depends(get_db)):
+        return [
+            schemas.ApiKeyListOut(
+                id=k.id, name=k.name, role=k.role, is_active=k.is_active
+            )
+            for k in crud.list_api_keys(db)
+        ]
+
+    @app.delete(
+        "/api-keys/{key_id}",
+        dependencies=[Depends(require_role("admin"))],
+        response_model=schemas.ApiKeyListOut,
+    )
+    def revoke_api_key(key_id: str, db: Session = Depends(get_db)):
+        k = crud.revoke_api_key(db, key_id)
+        if not k:
+            raise HTTPException(status_code=404, detail="API key not found")
+        return schemas.ApiKeyListOut(
+            id=k.id, name=k.name, role=k.role, is_active=k.is_active
+        )
+
+    # --- Workers (admin, user, worker) ---
 
     @app.post(
         "/workers/register",
-        dependencies=[Depends(require_token)],
+        dependencies=[Depends(require_role("admin", "worker"))],
         response_model=schemas.WorkerOut,
     )
     def register_worker(payload: schemas.WorkerCreate, db: Session = Depends(get_db)):
@@ -82,7 +131,7 @@ def create_app() -> FastAPI:
 
     @app.get(
         "/workers",
-        dependencies=[Depends(require_token)],
+        dependencies=[Depends(require_role("admin", "user", "worker"))],
         response_model=list[schemas.WorkerOut],
     )
     def workers(db: Session = Depends(get_db)):
@@ -90,7 +139,7 @@ def create_app() -> FastAPI:
 
     @app.post(
         "/workers/{worker_id}/heartbeat",
-        dependencies=[Depends(require_token)],
+        dependencies=[Depends(require_role("admin", "worker"))],
         response_model=schemas.WorkerOut,
     )
     def worker_heartbeat(
@@ -110,7 +159,9 @@ def create_app() -> FastAPI:
     # --- Jobs ---
 
     @app.post(
-        "/jobs", dependencies=[Depends(require_token)], response_model=schemas.JobOut
+        "/jobs",
+        dependencies=[Depends(require_role("admin", "user"))],
+        response_model=schemas.JobOut,
     )
     def create_job(payload: schemas.JobCreate, db: Session = Depends(get_db)):
         if payload.worker_id and not crud.get_worker(db, payload.worker_id):
@@ -132,7 +183,7 @@ def create_app() -> FastAPI:
 
     @app.get(
         "/jobs",
-        dependencies=[Depends(require_token)],
+        dependencies=[Depends(require_role("admin", "user", "worker"))],
         response_model=list[schemas.JobOut],
     )
     def list_jobs(
@@ -146,7 +197,7 @@ def create_app() -> FastAPI:
 
     @app.get(
         "/jobs/{job_id}",
-        dependencies=[Depends(require_token)],
+        dependencies=[Depends(require_role("admin", "user", "worker"))],
         response_model=schemas.JobOut,
     )
     def get_job(job_id: str, db: Session = Depends(get_db)):
@@ -157,7 +208,7 @@ def create_app() -> FastAPI:
 
     @app.patch(
         "/jobs/{job_id}/claim",
-        dependencies=[Depends(require_token)],
+        dependencies=[Depends(require_role("admin", "worker"))],
         response_model=schemas.JobOut,
     )
     def claim_job(job_id: str, db: Session = Depends(get_db)):
@@ -170,7 +221,7 @@ def create_app() -> FastAPI:
 
     @app.patch(
         "/jobs/{job_id}/complete",
-        dependencies=[Depends(require_token)],
+        dependencies=[Depends(require_role("admin", "worker"))],
         response_model=schemas.JobOut,
     )
     def complete_job(
@@ -185,7 +236,7 @@ def create_app() -> FastAPI:
 
     @app.patch(
         "/jobs/{job_id}/logs",
-        dependencies=[Depends(require_token)],
+        dependencies=[Depends(require_role("admin", "worker"))],
         response_model=schemas.JobLogsOut,
     )
     def append_logs(
@@ -200,7 +251,7 @@ def create_app() -> FastAPI:
 
     @app.get(
         "/jobs/{job_id}/logs",
-        dependencies=[Depends(require_token)],
+        dependencies=[Depends(require_role("admin", "user", "worker"))],
         response_model=schemas.JobLogsOut,
     )
     def get_logs(
