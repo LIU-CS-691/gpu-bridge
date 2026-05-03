@@ -4,7 +4,7 @@ import httpx
 import typer
 
 from .config import load_config
-from .executor import run_container
+from .executor import run_container_streaming
 
 app = typer.Typer(help="GPUBridge Worker CLI")
 
@@ -23,6 +23,36 @@ def register(name: str = typer.Option("Unnamed GPU")):
         r.raise_for_status()
         worker = r.json()
         typer.echo(f"Registered worker_id={worker['id']}")
+
+
+def _execute_job(c: httpx.Client, job: dict, timeout: int, gpu: bool):
+    job_id = job["id"]
+
+    typer.echo(f"Running job {job_id}: {job['image']} — {job['command']}")
+    succeeded = False
+
+    for chunk, done in run_container_streaming(
+        image=job["image"],
+        command=job["command"],
+        timeout=timeout,
+        gpu=gpu,
+    ):
+        if chunk is not None:
+            typer.echo(chunk, nl=False)
+            try:
+                c.patch(f"/jobs/{job_id}/logs", json={"data": chunk})
+            except httpx.HTTPError:
+                pass
+        if done is not None:
+            succeeded = done
+
+    status = "SUCCEEDED" if succeeded else "FAILED"
+    typer.echo(f"Job {job_id} {status}")
+
+    try:
+        c.patch(f"/jobs/{job_id}/complete", json={"status": status})
+    except httpx.HTTPError as e:
+        typer.echo(f"Failed to report completion for {job_id}: {e}")
 
 
 @app.command()
@@ -73,23 +103,6 @@ def start(
                     typer.echo(f"Claim failed for {job_id}: {e}")
                     continue
 
-                typer.echo(f"Running job {job_id}: {job['image']} — {job['command']}")
-                logs, succeeded = run_container(
-                    image=job["image"],
-                    command=job["command"],
-                    timeout=timeout,
-                    gpu=gpu,
-                )
-
-                status = "SUCCEEDED" if succeeded else "FAILED"
-                typer.echo(f"Job {job_id} {status}")
-
-                try:
-                    c.patch(
-                        f"/jobs/{job_id}/complete",
-                        json={"status": status, "logs": logs},
-                    )
-                except httpx.HTTPError as e:
-                    typer.echo(f"Failed to report completion for {job_id}: {e}")
+                _execute_job(c, job, timeout, gpu)
 
             time.sleep(POLL_INTERVAL)

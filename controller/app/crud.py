@@ -80,7 +80,18 @@ def complete_job(
     if status not in VALID_TRANSITIONS.get("RUNNING", set()):
         return None
     j.status = status
-    j.logs = logs
+    if logs:
+        j.logs = (j.logs or "") + logs
+    db.commit()
+    db.refresh(j)
+    return j
+
+
+def append_logs(db: Session, job_id: str, data: str) -> models.Job | None:
+    j = db.get(models.Job, job_id)
+    if not j or j.status != "RUNNING":
+        return None
+    j.logs = (j.logs or "") + data
     db.commit()
     db.refresh(j)
     return j

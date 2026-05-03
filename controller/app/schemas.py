@@ -36,3 +36,13 @@ class JobOut(BaseModel):
 class JobComplete(BaseModel):
     status: str = Field(..., pattern="^(SUCCEEDED|FAILED)$")
     logs: Optional[str] = None
+
+
+class JobLogsAppend(BaseModel):
+    data: str
+
+
+class JobLogsOut(BaseModel):
+    job_id: str
+    status: str
+    logs: str

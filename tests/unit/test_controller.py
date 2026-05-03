@@ -163,3 +163,53 @@ def test_invalid_status_transition():
         headers=HEADERS,
     )
     assert r.status_code == 409
+
+
+def test_streaming_logs():
+    client = get_test_client()
+
+    r = client.post("/workers/register", json={"name": "Log GPU"}, headers=HEADERS)
+    worker_id = r.json()["id"]
+
+    r = client.post(
+        "/jobs",
+        json={"worker_id": worker_id, "image": "alpine", "command": "echo streaming"},
+        headers=HEADERS,
+    )
+    job_id = r.json()["id"]
+
+    # Can't append logs to PENDING job
+    r = client.patch(f"/jobs/{job_id}/logs", json={"data": "chunk1"}, headers=HEADERS)
+    assert r.status_code == 409
+
+    # Claim the job
+    client.patch(f"/jobs/{job_id}/claim", headers=HEADERS)
+
+    # Append first chunk
+    r = client.patch(f"/jobs/{job_id}/logs", json={"data": "line 1\n"}, headers=HEADERS)
+    assert r.status_code == 200
+    assert r.json()["logs"] == "line 1\n"
+
+    # Append second chunk
+    r = client.patch(f"/jobs/{job_id}/logs", json={"data": "line 2\n"}, headers=HEADERS)
+    assert r.status_code == 200
+    assert r.json()["logs"] == "line 1\nline 2\n"
+
+    # GET logs with offset
+    r = client.get(f"/jobs/{job_id}/logs?offset=0", headers=HEADERS)
+    assert r.status_code == 200
+    assert r.json()["logs"] == "line 1\nline 2\n"
+
+    r = client.get(f"/jobs/{job_id}/logs?offset=7", headers=HEADERS)
+    assert r.status_code == 200
+    assert r.json()["logs"] == "line 2\n"
+
+    # Complete — logs should persist
+    client.patch(
+        f"/jobs/{job_id}/complete", json={"status": "SUCCEEDED"}, headers=HEADERS
+    )
+
+    r = client.get(f"/jobs/{job_id}/logs?offset=0", headers=HEADERS)
+    assert r.status_code == 200
+    assert r.json()["logs"] == "line 1\nline 2\n"
+    assert r.json()["status"] == "SUCCEEDED"
