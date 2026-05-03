@@ -1,9 +1,13 @@
+import time
+
 import typer
 
 from .api import client
 from .config import save_config, settings
 
 app = typer.Typer(help="GPUBridge CLI")
+
+FOLLOW_POLL_INTERVAL = 1
 
 
 @app.command()
@@ -81,14 +85,32 @@ def job_get(job_id: str = typer.Option(..., "--job-id")):
 
 
 @app.command("job-logs")
-def job_logs(job_id: str = typer.Option(..., "--job-id")):
-    """Fetch job output logs."""
+def job_logs(
+    job_id: str = typer.Option(..., "--job-id"),
+    follow: bool = typer.Option(False, "--follow", "-f", help="Tail logs in real-time"),
+):
+    """Fetch job output logs. Use --follow to stream live."""
     with client() as c:
-        r = c.get(f"/jobs/{job_id}")
-        r.raise_for_status()
-        j = r.json()
-        logs = j.get("logs")
-        if logs:
-            typer.echo(logs)
-        else:
-            typer.echo(f'No logs available (status: {j["status"]})')
+        offset = 0
+
+        while True:
+            r = c.get(f"/jobs/{job_id}/logs", params={"offset": offset})
+            r.raise_for_status()
+            data = r.json()
+            chunk = data.get("logs", "")
+
+            if chunk:
+                typer.echo(chunk, nl=False)
+                offset += len(chunk)
+
+            if not follow:
+                if not offset:
+                    typer.echo(f'No logs available (status: {data["status"]})')
+                break
+
+            if data["status"] in ("SUCCEEDED", "FAILED"):
+                if not offset:
+                    typer.echo(f'No logs available (status: {data["status"]})')
+                break
+
+            time.sleep(FOLLOW_POLL_INTERVAL)

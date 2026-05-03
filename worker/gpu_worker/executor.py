@@ -1,11 +1,14 @@
+from collections.abc import Generator
+
 import docker
 from docker.errors import ContainerError, ImageNotFound, APIError
 
 
-def run_container(
+def run_container_streaming(
     image: str, command: str, timeout: int = 300, gpu: bool = False
-) -> tuple[str, bool]:
-    """Run a Docker container and return (logs, succeeded)."""
+) -> Generator[tuple[str | None, bool | None], None, None]:
+    """Run a Docker container, yielding (log_chunk, None) during execution
+    and (None, succeeded) at the end."""
     client = docker.from_env()
 
     kwargs = {
@@ -22,18 +25,26 @@ def run_container(
     container = None
     try:
         container = client.containers.run(**kwargs)
+
+        for chunk in container.logs(stream=True, follow=True):
+            text = chunk.decode("utf-8", errors="replace")
+            yield text, None
+
         result = container.wait(timeout=timeout)
-        logs = container.logs().decode("utf-8", errors="replace")
         exit_code = result.get("StatusCode", -1)
-        return logs, exit_code == 0
+        yield None, exit_code == 0
     except ContainerError as e:
-        return str(e), False
+        yield str(e) + "\n", None
+        yield None, False
     except ImageNotFound:
-        return f"Image not found: {image}", False
+        yield f"Image not found: {image}\n", None
+        yield None, False
     except APIError as e:
-        return f"Docker API error: {e}", False
+        yield f"Docker API error: {e}\n", None
+        yield None, False
     except Exception as e:
-        return f"Unexpected error: {e}", False
+        yield f"Unexpected error: {e}\n", None
+        yield None, False
     finally:
         if container:
             try:

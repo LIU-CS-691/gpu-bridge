@@ -158,6 +158,37 @@ def create_app() -> FastAPI:
             )
         return _job_out(j)
 
+    @app.patch(
+        "/jobs/{job_id}/logs",
+        dependencies=[Depends(require_token)],
+        response_model=schemas.JobLogsOut,
+    )
+    def append_logs(
+        job_id: str, payload: schemas.JobLogsAppend, db: Session = Depends(get_db)
+    ):
+        j = crud.append_logs(db, job_id, payload.data)
+        if not j:
+            raise HTTPException(
+                status_code=409, detail="Job not found or not in RUNNING state"
+            )
+        return schemas.JobLogsOut(job_id=j.id, status=j.status, logs=j.logs or "")
+
+    @app.get(
+        "/jobs/{job_id}/logs",
+        dependencies=[Depends(require_token)],
+        response_model=schemas.JobLogsOut,
+    )
+    def get_logs(
+        job_id: str,
+        offset: int = Query(0, ge=0),
+        db: Session = Depends(get_db),
+    ):
+        j = crud.get_job(db, job_id)
+        if not j:
+            raise HTTPException(status_code=404, detail="Job not found")
+        logs = j.logs or ""
+        return schemas.JobLogsOut(job_id=j.id, status=j.status, logs=logs[offset:])
+
     return app
 
 
