@@ -7,8 +7,17 @@ class HealthResponse(BaseModel):
     status: str = "ok"
 
 
+class GpuDevice(BaseModel):
+    index: int
+    name: str
+    memory_total_mb: int
+    memory_free_mb: int
+    utilization_pct: int
+
+
 class WorkerCreate(BaseModel):
     name: str = Field(default="Unnamed GPU", max_length=200)
+    gpu_info: Optional[list[GpuDevice]] = None
 
 
 class WorkerOut(BaseModel):
@@ -16,6 +25,11 @@ class WorkerOut(BaseModel):
     name: str
     last_heartbeat: Optional[str] = None
     status: str = "unknown"
+    gpu_info: Optional[list[GpuDevice]] = None
+
+
+class WorkerHeartbeat(BaseModel):
+    gpu_info: Optional[list[GpuDevice]] = None
 
 
 class JobCreate(BaseModel):

@@ -31,13 +31,20 @@ def health():
 
 @app.command("workers")
 def workers_list():
-    """List registered workers with online/offline status."""
+    """List registered workers with online/offline status and GPU info."""
     with client() as c:
         r = c.get("/workers")
         r.raise_for_status()
         for w in r.json():
             status = w.get("status", "unknown")
-            typer.echo(f'[{status.upper()}] {w["name"]} - ID: {w["id"]}')
+            line = f'[{status.upper()}] {w["name"]} - ID: {w["id"]}'
+            gpus = w.get("gpu_info")
+            if gpus:
+                gpu_strs = [f'{g["name"]} ({g["memory_total_mb"]}MB)' for g in gpus]
+                line += f' — GPUs: {", ".join(gpu_strs)}'
+            else:
+                line += " — No GPUs"
+            typer.echo(line)
 
 
 @app.command("jobs")

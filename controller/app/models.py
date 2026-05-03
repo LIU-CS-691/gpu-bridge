@@ -1,7 +1,7 @@
 import uuid
 from typing import Optional
 
-from sqlalchemy import String, Text, DateTime, ForeignKey
+from sqlalchemy import JSON, String, Text, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -22,6 +22,7 @@ class Worker(Base):
     last_heartbeat: Mapped[Optional[DateTime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    gpu_info: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     jobs: Mapped[list["Job"]] = relationship(back_populates="worker")
 
