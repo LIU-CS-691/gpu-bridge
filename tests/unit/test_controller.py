@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+import pytest
 from dotenv import load_dotenv
 
 env_path = Path(__file__).resolve().parents[2] / ".env"
@@ -17,15 +18,27 @@ from controller.app.main import create_app  # noqa: E402
 import controller.app.models  # noqa: E402, F401
 from fastapi.testclient import TestClient  # noqa: E402
 
-Base.metadata.drop_all(bind=engine)
-Base.metadata.create_all(bind=engine)
-
 HEADERS = {"X-API-Token": "test-token"}
+
+
+@pytest.fixture(autouse=True)
+def clean_db():
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    yield
 
 
 def get_test_client():
     app = create_app()
     return TestClient(app)
+
+
+def _register_online_worker(client, name="Test GPU"):
+    """Register a worker and send heartbeat so it's online."""
+    r = client.post("/workers/register", json={"name": name}, headers=HEADERS)
+    worker_id = r.json()["id"]
+    client.post(f"/workers/{worker_id}/heartbeat", headers=HEADERS)
+    return worker_id
 
 
 def test_health_ok():
@@ -48,7 +61,7 @@ def test_register_and_list_workers():
     assert any(w["id"] == worker["id"] for w in r.json())
 
 
-def test_create_job_requires_worker():
+def test_create_job_requires_valid_worker():
     client = get_test_client()
     r = client.post(
         "/jobs",
@@ -58,11 +71,9 @@ def test_create_job_requires_worker():
     assert r.status_code == 404
 
 
-def test_job_claim_and_complete():
+def test_job_with_explicit_worker():
     client = get_test_client()
-
-    r = client.post("/workers/register", json={"name": "Test GPU"}, headers=HEADERS)
-    worker_id = r.json()["id"]
+    worker_id = _register_online_worker(client)
 
     r = client.post(
         "/jobs",
@@ -72,7 +83,19 @@ def test_job_claim_and_complete():
     assert r.status_code == 200
     job = r.json()
     assert job["status"] == "PENDING"
-    job_id = job["id"]
+    assert job["worker_id"] == worker_id
+
+
+def test_job_claim_and_complete():
+    client = get_test_client()
+    worker_id = _register_online_worker(client)
+
+    r = client.post(
+        "/jobs",
+        json={"worker_id": worker_id, "image": "alpine", "command": "echo ok"},
+        headers=HEADERS,
+    )
+    job_id = r.json()["id"]
 
     r = client.patch(f"/jobs/{job_id}/claim", headers=HEADERS)
     assert r.status_code == 200
@@ -100,9 +123,7 @@ def test_job_claim_and_complete():
 
 def test_list_jobs_with_filters():
     client = get_test_client()
-
-    r = client.post("/workers/register", json={"name": "Filter GPU"}, headers=HEADERS)
-    worker_id = r.json()["id"]
+    worker_id = _register_online_worker(client, "Filter GPU")
 
     client.post(
         "/jobs",
@@ -146,9 +167,7 @@ def test_worker_heartbeat():
 
 def test_invalid_status_transition():
     client = get_test_client()
-
-    r = client.post("/workers/register", json={"name": "Trans GPU"}, headers=HEADERS)
-    worker_id = r.json()["id"]
+    worker_id = _register_online_worker(client, "Trans GPU")
 
     r = client.post(
         "/jobs",
@@ -167,9 +186,7 @@ def test_invalid_status_transition():
 
 def test_streaming_logs():
     client = get_test_client()
-
-    r = client.post("/workers/register", json={"name": "Log GPU"}, headers=HEADERS)
-    worker_id = r.json()["id"]
+    worker_id = _register_online_worker(client, "Log GPU")
 
     r = client.post(
         "/jobs",
@@ -178,24 +195,19 @@ def test_streaming_logs():
     )
     job_id = r.json()["id"]
 
-    # Can't append logs to PENDING job
     r = client.patch(f"/jobs/{job_id}/logs", json={"data": "chunk1"}, headers=HEADERS)
     assert r.status_code == 409
 
-    # Claim the job
     client.patch(f"/jobs/{job_id}/claim", headers=HEADERS)
 
-    # Append first chunk
     r = client.patch(f"/jobs/{job_id}/logs", json={"data": "line 1\n"}, headers=HEADERS)
     assert r.status_code == 200
     assert r.json()["logs"] == "line 1\n"
 
-    # Append second chunk
     r = client.patch(f"/jobs/{job_id}/logs", json={"data": "line 2\n"}, headers=HEADERS)
     assert r.status_code == 200
     assert r.json()["logs"] == "line 1\nline 2\n"
 
-    # GET logs with offset
     r = client.get(f"/jobs/{job_id}/logs?offset=0", headers=HEADERS)
     assert r.status_code == 200
     assert r.json()["logs"] == "line 1\nline 2\n"
@@ -204,7 +216,6 @@ def test_streaming_logs():
     assert r.status_code == 200
     assert r.json()["logs"] == "line 2\n"
 
-    # Complete — logs should persist
     client.patch(
         f"/jobs/{job_id}/complete", json={"status": "SUCCEEDED"}, headers=HEADERS
     )
@@ -213,3 +224,78 @@ def test_streaming_logs():
     assert r.status_code == 200
     assert r.json()["logs"] == "line 1\nline 2\n"
     assert r.json()["status"] == "SUCCEEDED"
+
+
+def test_auto_assign_job():
+    """Job without worker_id gets auto-assigned to an online worker."""
+    client = get_test_client()
+    worker_id = _register_online_worker(client, "Auto GPU")
+
+    r = client.post(
+        "/jobs",
+        json={"image": "alpine", "command": "echo auto"},
+        headers=HEADERS,
+    )
+    assert r.status_code == 200
+    job = r.json()
+    assert job["worker_id"] == worker_id
+    assert job["status"] == "PENDING"
+
+
+def test_queued_job_no_workers():
+    """Job without worker_id stays QUEUED when no online workers."""
+    client = get_test_client()
+
+    r = client.post(
+        "/jobs",
+        json={"image": "alpine", "command": "echo queued"},
+        headers=HEADERS,
+    )
+    assert r.status_code == 200
+    job = r.json()
+    assert job["status"] == "QUEUED"
+    assert job["worker_id"] is None
+
+
+def test_queued_job_assigned_on_heartbeat():
+    """QUEUED jobs get assigned when a worker sends heartbeat."""
+    client = get_test_client()
+
+    r = client.post(
+        "/jobs",
+        json={"image": "alpine", "command": "echo waiting"},
+        headers=HEADERS,
+    )
+    job_id = r.json()["id"]
+    assert r.json()["status"] == "QUEUED"
+
+    r = client.post("/workers/register", json={"name": "Late GPU"}, headers=HEADERS)
+    worker_id = r.json()["id"]
+
+    client.post(f"/workers/{worker_id}/heartbeat", headers=HEADERS)
+
+    r = client.get(f"/jobs/{job_id}", headers=HEADERS)
+    assert r.json()["status"] == "PENDING"
+    assert r.json()["worker_id"] == worker_id
+
+
+def test_priority_ordering():
+    """Higher priority jobs get assigned first."""
+    client = get_test_client()
+    worker_id = _register_online_worker(client, "Priority GPU")
+
+    client.post(
+        "/jobs",
+        json={"image": "alpine", "command": "echo low", "priority": 1},
+        headers=HEADERS,
+    )
+    client.post(
+        "/jobs",
+        json={"image": "alpine", "command": "echo high", "priority": 5},
+        headers=HEADERS,
+    )
+
+    r = client.get(f"/jobs?worker_id={worker_id}&status=PENDING", headers=HEADERS)
+    jobs = r.json()
+    assert len(jobs) >= 2
+    assert jobs[0]["priority"] >= jobs[1]["priority"]

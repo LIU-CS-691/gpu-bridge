@@ -1,7 +1,7 @@
 import uuid
 from typing import Optional
 
-from sqlalchemy import JSON, String, Text, DateTime, ForeignKey
+from sqlalchemy import JSON, Integer, String, Text, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -30,12 +30,13 @@ class Worker(Base):
 class Job(Base):
     __tablename__ = "jobs"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    worker_id: Mapped[str] = mapped_column(
-        String(32), ForeignKey("workers.id"), index=True
+    worker_id: Mapped[Optional[str]] = mapped_column(
+        String(32), ForeignKey("workers.id"), index=True, nullable=True
     )
     image: Mapped[str] = mapped_column(String(400), default="hello-image")
     command: Mapped[str] = mapped_column(String(1000), default="echo hello")
-    status: Mapped[str] = mapped_column(String(32), default="PENDING")
+    status: Mapped[str] = mapped_column(String(32), default="QUEUED")
+    priority: Mapped[int] = mapped_column(Integer, default=0)
     logs: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

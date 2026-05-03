@@ -33,17 +33,19 @@ class WorkerHeartbeat(BaseModel):
 
 
 class JobCreate(BaseModel):
-    worker_id: str
+    worker_id: Optional[str] = None
     image: str = "hello-image"
     command: str = "echo hello"
+    priority: int = Field(default=0, ge=0, le=10)
 
 
 class JobOut(BaseModel):
     id: str
-    worker_id: str
+    worker_id: Optional[str] = None
     image: str
     command: str
     status: str
+    priority: int = 0
     logs: Optional[str] = None
 
 
