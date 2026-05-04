@@ -28,3 +28,4 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: worker/dist/
+          skip-existing: true
