@@ -1,12 +1,38 @@
 [project]
 name = "gpu-worker"
 version = "0.1.0"
-description = "GPUBridge Worker CLI"
+description = "GPUBridge Worker — registers with a GPUBridge controller, polls for jobs, and executes them in Docker containers with optional GPU passthrough."
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.11"
-dependencies = ["typer>=0.12.5", "httpx>=0.27.2", "python-dotenv>=1.0.0", "docker>=7.0.0", "nvidia-ml-py>=12.0.0"]
+authors = [{ name = "Amruth Vamshi", email = "battaamruth1@gmail.com" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "typer>=0.12.5",
+    "httpx>=0.27.2",
+    "python-dotenv>=1.0.0",
+    "docker>=7.0.0",
+    "nvidia-ml-py>=12.0.0",
+]
 
 [project.scripts]
 gpu-worker = "gpu_worker.main:app"
+
+[project.urls]
+Homepage = "https://github.com/LIU-CS-691/gpu-bridge"
+Repository = "https://github.com/LIU-CS-691/gpu-bridge"
+Issues = "https://github.com/LIU-CS-691/gpu-bridge/issues"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
 
 [tool.ruff]
 line-length = 100
