@@ -8,6 +8,7 @@ jobs:
   deploy:
     name: Deploy to EC2
     runs-on: ubuntu-latest
+    environment: controller
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
