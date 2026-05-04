@@ -3,7 +3,6 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from pydantic import BaseModel
 
 env_path = Path.cwd() / ".env"
 if env_path.exists():
@@ -22,9 +21,10 @@ def save_config(server: str, token: str):
     CONFIG_FILE.write_text(json.dumps({"server": server, "token": token}, indent=2))
 
 
-class Settings(BaseModel):
-    GPU_TOOL_SERVER: str = "http://localhost:8000"
-    GPU_TOOL_TOKEN: str = "devtoken"
+class Settings:
+    def __init__(self, GPU_TOOL_SERVER: str, GPU_TOOL_TOKEN: str):
+        self.GPU_TOOL_SERVER = GPU_TOOL_SERVER
+        self.GPU_TOOL_TOKEN = GPU_TOOL_TOKEN
 
 
 def _build_settings() -> Settings:
