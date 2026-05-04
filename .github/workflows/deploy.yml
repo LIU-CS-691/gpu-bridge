@@ -1,0 +1,32 @@
+name: Deploy Controller
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/gpu-bridge
+            git pull origin main
+            docker compose up -d --build
+            echo "Waiting for health check..."
+            for i in $(seq 1 15); do
+              if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+                echo "Controller is healthy"
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "Health check failed"
+            docker compose logs --tail=50
+            exit 1
