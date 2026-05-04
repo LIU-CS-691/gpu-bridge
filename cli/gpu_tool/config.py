@@ -2,12 +2,6 @@ import json
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-env_path = Path.cwd() / ".env"
-if env_path.exists():
-    load_dotenv(env_path)
-
 CONFIG_FILE = Path.home() / ".gpu-tool.json"
 
 
@@ -30,8 +24,8 @@ class Settings:
 def _build_settings() -> Settings:
     saved = _load_saved()
     return Settings(
-        GPU_TOOL_SERVER=os.getenv("GPU_TOOL_SERVER", saved.get("server", "http://localhost:8000")),
-        GPU_TOOL_TOKEN=os.getenv("GPU_TOOL_TOKEN", saved.get("token", "devtoken")),
+        GPU_TOOL_SERVER=saved.get("server", os.getenv("GPU_TOOL_SERVER", "http://localhost:8000")),
+        GPU_TOOL_TOKEN=saved.get("token", os.getenv("GPU_TOOL_TOKEN", "devtoken")),
     )
 
 
