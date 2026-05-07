@@ -15,13 +15,18 @@ def test_successful_run():
 
     with patch("worker.gpu_worker.executor.docker") as mock_docker:
         mock_docker.from_env.return_value.containers.run.return_value = container
+        mock_docker.from_env.return_value.images.get.return_value = True
 
         chunks = list(run_container_streaming("alpine", "echo hello"))
 
     log_chunks = [c for c, d in chunks if c is not None]
     done = [d for c, d in chunks if d is not None]
 
-    assert log_chunks == ["hello\n", "world\n"]
+    assert "hello\n" in log_chunks
+    assert "world\n" in log_chunks
+    assert any("Connecting to Docker" in c for c in log_chunks)
+    assert any("Container started" in c for c in log_chunks)
+    assert any("Exit code: 0" in c for c in log_chunks)
     assert done == [True]
     container.remove.assert_called_once_with(force=True)
 
@@ -31,6 +36,7 @@ def test_failed_run():
 
     with patch("worker.gpu_worker.executor.docker") as mock_docker:
         mock_docker.from_env.return_value.containers.run.return_value = container
+        mock_docker.from_env.return_value.images.get.return_value = True
 
         chunks = list(run_container_streaming("alpine", "false"))
 
@@ -39,13 +45,17 @@ def test_failed_run():
 
 
 def test_image_not_found():
-    from docker.errors import ImageNotFound
+    from docker.errors import ImageNotFound as DockerImageNotFound
 
     with patch("worker.gpu_worker.executor.docker") as mock_docker:
-        mock_docker.from_env.return_value.containers.run.side_effect = ImageNotFound(
+        mock_docker.from_env.return_value.images.get.side_effect = DockerImageNotFound(
             "nope"
         )
-        mock_docker.errors = __import__("docker.errors", fromlist=["errors"])
+        mock_docker.errors.ImageNotFound = DockerImageNotFound
+        mock_docker.from_env.return_value.api.pull.return_value = iter([])
+        mock_docker.from_env.return_value.containers.run.side_effect = (
+            DockerImageNotFound("nope")
+        )
 
         chunks = list(run_container_streaming("nonexistent", "echo hi"))
 
@@ -61,6 +71,7 @@ def test_gpu_passthrough_flag():
 
     with patch("worker.gpu_worker.executor.docker") as mock_docker:
         mock_docker.from_env.return_value.containers.run.return_value = container
+        mock_docker.from_env.return_value.images.get.return_value = True
         mock_docker.types.DeviceRequest = MagicMock()
 
         list(run_container_streaming("nvidia/cuda", "nvidia-smi", gpu=True))
@@ -75,6 +86,7 @@ def test_container_cleanup_on_error():
 
     with patch("worker.gpu_worker.executor.docker") as mock_docker:
         mock_docker.from_env.return_value.containers.run.return_value = container
+        mock_docker.from_env.return_value.images.get.return_value = True
 
         chunks = list(run_container_streaming("alpine", "echo hi"))
 

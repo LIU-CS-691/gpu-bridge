@@ -1,6 +1,6 @@
 [project]
 name = "gpu-worker"
-version = "0.1.1"
+version = "0.1.2"
 description = "GPUBridge Worker — registers with a GPUBridge controller, polls for jobs, and executes them in Docker containers with optional GPU passthrough."
 readme = "README.md"
 license = "MIT"
